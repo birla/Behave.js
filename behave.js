@@ -18,7 +18,7 @@ var Behave = Behave || function (userOpts) {
 
     if (typeof Array.prototype.filter !== 'function') {
         Array.prototype.filter = function(func /*, thisp */) {
-            if (this == null) {
+            if (this === null) {
                 throw new TypeError();
             }
 
@@ -61,7 +61,7 @@ var Behave = Behave || function (userOpts) {
             { open: "(", close: ")", canBreak: false },
             { open: "[", close: "]", canBreak: true },
             { open: "{", close: "}", canBreak: true }
-        ] 
+        ]
 
     },
     utils = {
@@ -75,16 +75,22 @@ var Behave = Behave || function (userOpts) {
                     defaults.textarea.focus();
                     var selection = document.selection.createRange();
 
-                    selection.moveStart('character', -defaults.textarea.value.length);
-                    caretPos = selection.text.length;
+                    if(selection === null) return 0;
+
+                    var re = defaults.textarea.createTextRange(), 
+                    selection_copy = re.duplicate(); 
+                    re.moveToBookmark(selection.getBookmark()); 
+                    selection_copy.setEndPoint('EndToStart', re); 
+
+                    caretPos = selection_copy.text.length;
                 }
                 return caretPos;
             },
             set: function (pos) {
-                if (defaults.textarea.setSelectionRange) {
-                    defaults.textarea.focus();
+                if (defaults.textarea.setSelectionRange) {  
+                    defaults.textarea.focus();  
                     defaults.textarea.setSelectionRange(pos, pos);
-                } else if (defaults.textarea.createTextRange) {
+                } else if (defaults.textarea.createTextRange) {  
                     var range = defaults.textarea.createTextRange();
                     range.collapse(true);
                     range.moveEnd('character', pos);
@@ -97,13 +103,25 @@ var Behave = Behave || function (userOpts) {
                 defaults.textarea.selectionEnd = end;
             },
             selection: function(){
-                var start = defaults.textarea.selectionStart,
-                    end = defaults.textarea.selectionEnd;
-                    
-                return  start != end ? {
-                    start: defaults.textarea.selectionStart,
-                    end: defaults.textarea.selectionEnd
-                } : false;
+                if(document.selection) {
+                    var range = document.selection.createRange();
+                    if (range && range.parentElement() == defaults.textarea) {
+                        var stored_range = range.duplicate();
+                        // Select all text
+                        stored_range.moveToElementText( defaults.textarea );
+                        // Now move 'dummy' end point to end point of original range
+                        stored_range.setEndPoint( 'EndToEnd', range );
+                        // Now we can calculate start and end points
+                        defaults.textarea.selectionStart = stored_range.text.length - range.text.length;
+                        defaults.textarea.selectionEnd = defaults.textarea.selectionStart + range.text.length;
+                    }
+                }
+                var r = defaults.textarea.selectionStart == defaults.textarea.selectionEnd ?
+                    false : {
+                        start: defaults.textarea.selectionStart,
+                        end: defaults.textarea.selectionEnd
+                    };
+                return r;
             }
         },
         editor: {
@@ -208,6 +226,17 @@ var Behave = Behave || function (userOpts) {
             } else {
                 e.returnValue = false;
             }
+        },
+        browserInfo : function (){
+            var N= navigator.appName, ua= navigator.userAgent, tem;
+            var M= ua.match(/(opera|chrome|safari|firefox|msie)\/?\s*(\.?\d+(\.\d+)*)/i);
+            if(M && (tem= ua.match(/version\/([\.\d]+)/i))!== null) M[2] = tem[1];
+            return M ? [M[1], M[2]]: [N, navigator.appVersion, '-?'];
+        },
+        isIE8 : function () {
+            var B=this.browserInfo();
+            // return false;
+            return (B[0] === 'MSIE' && B[1] === '8.0');
         }
     },
     intercept = {
@@ -233,7 +262,7 @@ var Behave = Behave || function (userOpts) {
                     }
 
                     var toIndent = val.substring(selection.start, selection.end),
-                        lines = toIndent.split("\n"),
+                        lines = toIndent.split(newLine),
                         i;
 
                     if(e.shiftKey){
@@ -242,7 +271,7 @@ var Behave = Behave || function (userOpts) {
                                 lines[i] = lines[i].substring(tab.length);
                             }
                         }
-                        toIndent = lines.join("\n");
+                        toIndent = lines.join(newLine);
 
                         utils.editor.set( val.substring(0,selection.start) + toIndent + val.substring(selection.end) );
                         utils.cursor.select(selection.start, selection.start+toIndent.length);
@@ -251,7 +280,7 @@ var Behave = Behave || function (userOpts) {
                         for(i in lines){
                             lines[i] = tab + lines[i];
                         }
-                        toIndent = lines.join("\n");
+                        toIndent = lines.join(newLine);
 
                         utils.editor.set( val.substring(0,selection.start) + toIndent + val.substring(selection.end) );
                         utils.cursor.select(selection.start, selection.start+toIndent.length);
@@ -306,13 +335,13 @@ var Behave = Behave || function (userOpts) {
 
                     for (i in charSettings.keyMap) {
                         if (charSettings.keyMap[i].open == leftChar && charSettings.keyMap[i].close == rightChar){
-                            closingBreak = "\n";
+                            closingBreak = newLine;
                         }
-                    } 
+                    }
                     
                 }
 
-                var edited = left + "\n" + ourIndent + closingBreak + (ourIndent.substring(0, ourIndent.length-tab.length) ) + right;
+                var edited = left + newLine + ourIndent + closingBreak + (ourIndent.substring(0, ourIndent.length-tab.length) ) + right;
                 utils.editor.set(edited);
                 utils.cursor.set(pos + finalCursorPos);
             }
@@ -414,7 +443,8 @@ var Behave = Behave || function (userOpts) {
             action.listen();
         }
         
-    };
+    },
+    newLine = "\n";
 
     this.destroy = function(){
         defaults.textarea.removeEventListener('keydown', intercept.tabKey);
@@ -425,4 +455,5 @@ var Behave = Behave || function (userOpts) {
 
     init(userOpts);
 
+    if(utils.isIE8()) newLine = "\r\n";
 };
